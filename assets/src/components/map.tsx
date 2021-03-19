@@ -44,6 +44,8 @@ export const defaultCenter: LatLngExpression = {
   lng: -71.05891,
 }
 
+type ShouldAutoCenterOrLocate = "auto_center" | "locate" | "neither"
+
 const makeVehicleIcon = (
   vehicle: Vehicle,
   isPrimary: boolean,
@@ -263,7 +265,7 @@ const RecenterControl = ({
 
 const useAutoCenter = (
   reactLeafletMapRef: MutableRefObject<ReactLeafletMap | null>,
-  shouldAutoCenter: boolean,
+  shouldAutoCenterOrLocate: ShouldAutoCenterOrLocate,
   isAutoCentering: MutableRefObject<boolean>,
   latLngs: LatLngExpression[]
 ) => {
@@ -271,13 +273,16 @@ const useAutoCenter = (
   const pickerContainerIsVisible: boolean = appState.pickerContainerIsVisible
   useEffect(() => {
     const reactLeafletMap: ReactLeafletMap | null = reactLeafletMapRef.current
-    if (reactLeafletMap !== null && shouldAutoCenter) {
+    if (
+      reactLeafletMap !== null &&
+      shouldAutoCenterOrLocate === "auto_center"
+    ) {
       const leafletMap: LeafletMap = reactLeafletMap.leafletElement
       isAutoCentering.current = true
       autoCenter(leafletMap, latLngs, pickerContainerIsVisible)
     }
   }, [
-    shouldAutoCenter,
+    shouldAutoCenterOrLocate === "auto_center",
     // useEffect uses ===, which doesn't work on arrays.
     // convert the array to a string so useEffect can tell if it doesn't change.
     JSON.stringify(latLngs),
@@ -285,22 +290,124 @@ const useAutoCenter = (
   ])
 }
 
+const useLocate = (
+  reactLeafletMapRef: MutableRefObject<ReactLeafletMap | null>,
+  shouldAutoCenterOrLocate: ShouldAutoCenterOrLocate,
+  setUserLocation: React.Dispatch<Position | null>
+) => {
+  useEffect(() => {
+    let watchId: number | null = null
+    let hasPannedToLocation: boolean = false
+    if (shouldAutoCenterOrLocate === "locate") {
+      watchId = navigator.geolocation.watchPosition((location) => {
+        setUserLocation(location)
+
+        const reactLeafletMap: ReactLeafletMap | null =
+          reactLeafletMapRef.current
+        if (!hasPannedToLocation && reactLeafletMap !== null) {
+          reactLeafletMap.leafletElement.setView([
+            location.coords.latitude,
+            location.coords.longitude,
+          ])
+          hasPannedToLocation = true
+        }
+      })
+    } else {
+      setUserLocation(null)
+    }
+
+    return () => {
+      if (watchId) {
+        navigator.geolocation.clearWatch(watchId)
+        watchId = null
+      }
+    }
+  }, [shouldAutoCenterOrLocate === "locate"])
+}
+
+const LocateControl = ({
+  shouldAutoCenterOrLocate,
+  setShouldAutoCenterOrLocate,
+}: {
+  shouldAutoCenterOrLocate: ShouldAutoCenterOrLocate
+  setShouldAutoCenterOrLocate: React.Dispatch<ShouldAutoCenterOrLocate>
+}) => (
+  <Control position="topright">
+    <div className="leaflet-bar m-vehicle-map__locate-button">
+      <a
+        href="#"
+        title="Go to my location"
+        role="button"
+        aria-label="Go to my location"
+        onClick={() => {
+          if (shouldAutoCenterOrLocate === "locate") {
+            setShouldAutoCenterOrLocate("neither")
+          } else {
+            setShouldAutoCenterOrLocate("locate")
+          }
+        }}
+      >
+        <svg
+          height="26"
+          viewBox="-6 -6 60 60"
+          width="26"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path d="M24 48a5.21 5.21 0 01-4.51-2.58C11.3 31.37 7.32 22 7.32 16.68a16.68 16.68 0 0133.36 0c0 5.3-4 14.69-12.18 28.74A5.2 5.2 0 0124 48zm0-46.76A15.46 15.46 0 008.56 16.68c0 5 4 14.46 12 28.11A4 4 0 0026 46.22a4.08 4.08 0 001.43-1.43c8-13.65 12-23.11 12-28.11A15.46 15.46 0 0024 1.24z" />
+          <circle cx="24" cy="16.68" r="5.74" />
+        </svg>
+      </a>
+    </div>
+  </Control>
+)
+
+const LocationMarker = ({ location }: { location: Position | null }) => {
+  if (location) {
+    const position: LatLngExpression = [
+      location.coords.latitude,
+      location.coords.longitude,
+    ]
+
+    return (
+      <Marker
+        position={position}
+        icon={Leaflet.divIcon({
+          iconSize: Leaflet.point(24, 24),
+          html:
+            '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M36 5a16.83 16.83 0 015 12c-.08 5-4 14.41-12 28.11a5.82 5.82 0 01-10.06 0l-.57-1C10.78 31 7.08 21.88 7.08 16.92A16.91 16.91 0 0136 5zm-12 6.37a5.55 5.55 0 105.55 5.55A5.56 5.56 0 0024 11.37z" fill="#4db6ac" fill-rule="evenodd" opacity=".8"/><path d="M24 1.39A15.53 15.53 0 008.47 16.92q0 7.44 11.7 27.49a4.42 4.42 0 007.66 0q11.7-20 11.7-27.49A15.53 15.53 0 0024 1.39zm3 42.52a3.47 3.47 0 01-3 1.7 3.44 3.44 0 01-3-1.7c-7.67-13.15-11.56-22.23-11.56-27a14.53 14.53 0 0129.06 0c.03 4.77-3.86 13.85-11.5 27z" fill="#fff"/></svg>',
+          iconAnchor: [12, 24],
+          className: "m-vehicle-map__location-icon",
+        })}
+      />
+    )
+  }
+
+  return null
+}
+
 const Map = (props: Props): ReactElement<HTMLDivElement> => {
   const mapRef: MutableRefObject<ReactLeafletMap | null> =
     // this prop is only for tests, and is consistent between renders, so the hook call is consistent
     // tslint:disable-next-line: react-hooks-nesting
     props.reactLeafletRef || useRef(null)
-  const [shouldAutoCenter, setShouldAutoCenter] = useState<boolean>(true)
+  const [shouldAutoCenterOrLocate, setShouldAutoCenterOrLocate] = useState<
+    ShouldAutoCenterOrLocate
+  >("auto_center")
+  const [userLocation, setUserLocation] = useState<Position | null>(null)
   const isAutoCentering: MutableRefObject<boolean> = useRef(false)
 
   const latLngs: LatLngExpression[] = props.vehicles.map(
     ({ latitude, longitude }) => Leaflet.latLng(latitude, longitude)
   )
-  useAutoCenter(mapRef, shouldAutoCenter, isAutoCentering, latLngs)
+  useAutoCenter(mapRef, shouldAutoCenterOrLocate, isAutoCentering, latLngs)
+  useLocate(mapRef, shouldAutoCenterOrLocate, setUserLocation)
 
-  const autoCenteringClass = shouldAutoCenter
-    ? "m-vehicle-map-state--auto-centering"
-    : ""
+  const autoCenteringClass =
+    shouldAutoCenterOrLocate === "auto_center"
+      ? "m-vehicle-map-state--auto-centering"
+      : shouldAutoCenterOrLocate === "locate"
+      ? "m-vehicle-map-state--locating"
+      : ""
 
   return (
     <>
@@ -319,8 +426,11 @@ const Map = (props: Props): ReactElement<HTMLDivElement> => {
         onmovestart={() => {
           // If the user drags or zooms, they want manual control of the map.
           // But don't disable shouldAutoCenter if the move was triggered by an auto center.
-          if (!isAutoCentering.current) {
-            setShouldAutoCenter(false)
+          if (
+            !isAutoCentering.current &&
+            shouldAutoCenterOrLocate === "auto_center"
+          ) {
+            setShouldAutoCenterOrLocate("neither")
           }
         }}
         onmoveend={() => {
@@ -332,7 +442,13 @@ const Map = (props: Props): ReactElement<HTMLDivElement> => {
       >
         <ZoomControl position="topright" />
         <FullscreenControl position="topright" />
-        <RecenterControl turnOnAutoCenter={() => setShouldAutoCenter(true)} />
+        <LocateControl
+          shouldAutoCenterOrLocate={shouldAutoCenterOrLocate}
+          setShouldAutoCenterOrLocate={setShouldAutoCenterOrLocate}
+        />
+        <RecenterControl
+          turnOnAutoCenter={() => setShouldAutoCenterOrLocate("auto_center")}
+        />
         <TileLayer
           url="https://mbta-map-tiles-dev.s3.amazonaws.com/osm_tiles/{z}/{x}/{y}.png"
           attribution='&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
@@ -349,6 +465,9 @@ const Map = (props: Props): ReactElement<HTMLDivElement> => {
         {(props.shapes || []).map((shape) => (
           <Shape key={shape.id} shape={shape} />
         ))}
+        {shouldAutoCenterOrLocate === "locate" ? (
+          <LocationMarker location={userLocation} />
+        ) : null}
       </ReactLeafletMap>
     </>
   )
