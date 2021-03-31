@@ -291,24 +291,21 @@ const useAutoCenter = (
 }
 
 const useLocate = (
-  reactLeafletMapRef: MutableRefObject<ReactLeafletMap | null>,
-  shouldAutoCenterOrLocate: ShouldAutoCenterOrLocate,
-  setUserLocation: React.Dispatch<Position | null>
-) => {
+  shouldAutoCenterOrLocate: ShouldAutoCenterOrLocate
+): Position | null => {
+  const [userLocation, setUserLocation] = useState<Position | null>(null)
   useEffect(() => {
+    console.log("using location")
+    console.log(shouldAutoCenterOrLocate)
     let watchId: number | null = null
     let hasPannedToLocation: boolean = false
     if (shouldAutoCenterOrLocate === "locate") {
       watchId = navigator.geolocation.watchPosition((location) => {
+        console.log("got location")
+        console.log(location)
         setUserLocation(location)
 
-        const reactLeafletMap: ReactLeafletMap | null =
-          reactLeafletMapRef.current
-        if (!hasPannedToLocation && reactLeafletMap !== null) {
-          reactLeafletMap.leafletElement.setView([
-            location.coords.latitude,
-            location.coords.longitude,
-          ])
+        if (!hasPannedToLocation) {
           hasPannedToLocation = true
         }
       })
@@ -317,12 +314,15 @@ const useLocate = (
     }
 
     return () => {
+      console.log("tearing down use location")
       if (watchId) {
         navigator.geolocation.clearWatch(watchId)
         watchId = null
       }
     }
   }, [shouldAutoCenterOrLocate === "locate"])
+
+  return userLocation
 }
 
 const LocateControl = ({
@@ -361,30 +361,6 @@ const LocateControl = ({
   </Control>
 )
 
-const LocationMarker = ({ location }: { location: Position | null }) => {
-  if (location) {
-    const position: LatLngExpression = [
-      location.coords.latitude,
-      location.coords.longitude,
-    ]
-
-    return (
-      <Marker
-        position={position}
-        icon={Leaflet.divIcon({
-          iconSize: Leaflet.point(24, 24),
-          html:
-            '<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M36 5a16.83 16.83 0 015 12c-.08 5-4 14.41-12 28.11a5.82 5.82 0 01-10.06 0l-.57-1C10.78 31 7.08 21.88 7.08 16.92A16.91 16.91 0 0136 5zm-12 6.37a5.55 5.55 0 105.55 5.55A5.56 5.56 0 0024 11.37z" fill="#4db6ac" fill-rule="evenodd" opacity=".8"/><path d="M24 1.39A15.53 15.53 0 008.47 16.92q0 7.44 11.7 27.49a4.42 4.42 0 007.66 0q11.7-20 11.7-27.49A15.53 15.53 0 0024 1.39zm3 42.52a3.47 3.47 0 01-3 1.7 3.44 3.44 0 01-3-1.7c-7.67-13.15-11.56-22.23-11.56-27a14.53 14.53 0 0129.06 0c.03 4.77-3.86 13.85-11.5 27z" fill="#fff"/></svg>',
-          iconAnchor: [12, 24],
-          className: "m-vehicle-map__location-icon",
-        })}
-      />
-    )
-  }
-
-  return null
-}
-
 const Map = (props: Props): ReactElement<HTMLDivElement> => {
   const mapRef: MutableRefObject<ReactLeafletMap | null> =
     // this prop is only for tests, and is consistent between renders, so the hook call is consistent
@@ -393,14 +369,14 @@ const Map = (props: Props): ReactElement<HTMLDivElement> => {
   const [shouldAutoCenterOrLocate, setShouldAutoCenterOrLocate] = useState<
     ShouldAutoCenterOrLocate
   >("auto_center")
-  const [userLocation, setUserLocation] = useState<Position | null>(null)
+  console.log(shouldAutoCenterOrLocate)
   const isAutoCentering: MutableRefObject<boolean> = useRef(false)
 
   const latLngs: LatLngExpression[] = props.vehicles.map(
     ({ latitude, longitude }) => Leaflet.latLng(latitude, longitude)
   )
   useAutoCenter(mapRef, shouldAutoCenterOrLocate, isAutoCentering, latLngs)
-  useLocate(mapRef, shouldAutoCenterOrLocate, setUserLocation)
+  const userLocation = useLocate(shouldAutoCenterOrLocate)
 
   const autoCenteringClass =
     shouldAutoCenterOrLocate === "auto_center"
@@ -408,6 +384,22 @@ const Map = (props: Props): ReactElement<HTMLDivElement> => {
       : shouldAutoCenterOrLocate === "locate"
       ? "m-vehicle-map-state--locating"
       : ""
+
+  return (
+    <button
+      onClick={() => {
+        if (shouldAutoCenterOrLocate === "locate") {
+          console.log("button clicked, not locating")
+          setShouldAutoCenterOrLocate("neither")
+        } else {
+          setShouldAutoCenterOrLocate("locate")
+          console.log("button clicked, locating")
+        }
+      }}
+    >
+      Click me!
+    </button>
+  )
 
   return (
     <>
@@ -465,9 +457,6 @@ const Map = (props: Props): ReactElement<HTMLDivElement> => {
         {(props.shapes || []).map((shape) => (
           <Shape key={shape.id} shape={shape} />
         ))}
-        {shouldAutoCenterOrLocate === "locate" ? (
-          <LocationMarker location={userLocation} />
-        ) : null}
       </ReactLeafletMap>
     </>
   )

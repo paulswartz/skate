@@ -87,16 +87,17 @@
 
 .m-vehicle-map__locate-button {
   svg {
-    fill: $color-font-grey;
-    stroke: $color-font-grey;
+    fill: $color-button-secondary;
+    stroke: $color-button-secondary;
   }
 
   .m-vehicle-map-state--locating + .m-vehicle-map & a {
     cursor: default;
 
     svg {
-      fill: $color-button-secondary;
-      stroke: $color-button-secondary;
+      fill: $color-font-grey;
+      stroke: $color-font-grey;
+
       stroke-width: 2;
     }
   }
