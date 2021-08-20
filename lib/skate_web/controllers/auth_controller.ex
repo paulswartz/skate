@@ -2,6 +2,8 @@ defmodule SkateWeb.AuthController do
   use SkateWeb, :controller
   plug(Ueberauth)
 
+  require Logger
+
   alias SkateWeb.AuthManager
   alias SkateWeb.Router.Helpers
 
@@ -16,6 +18,8 @@ defmodule SkateWeb.AuthController do
       refresh_token_store = Application.get_env(:skate, :refresh_token_store)
       refresh_token_store.put_refresh_token(username, credentials.refresh_token)
     end
+
+    Logger.info("raw_cognito " <> inspect(auth.extra))
 
     conn
     |> Guardian.Plug.sign_in(
