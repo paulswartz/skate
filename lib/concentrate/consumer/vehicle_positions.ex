@@ -9,7 +9,9 @@ defmodule Concentrate.Consumer.VehiclePositions do
   alias Realtime.{Vehicles, Server, Vehicle}
 
   def start_link(opts) do
-    GenStage.start_link(__MODULE__, opts)
+    # set fullsweep to periodically garbabe collect the fetched schedule data
+    # without having to hibernate after every event.
+    GenStage.start_link(__MODULE__, opts, spawn_opt: [fullsweep_after: 20])
   end
 
   @impl GenStage

@@ -27,7 +27,8 @@ defmodule Realtime.BlockWaiverStore do
   def start_link(opts \\ []) do
     name = Keyword.get(opts, :name, default_name())
 
-    GenServer.start_link(__MODULE__, %__MODULE__{}, name: name)
+    # always fullsweep: this keeps us from having the old Schedule data stick around
+    GenServer.start_link(__MODULE__, %__MODULE__{}, name: name, spawn_opt: [fullsweep_after: 0])
   end
 
   @spec block_waivers_for_block_and_service(Block.id(), Service.id()) :: [BlockWaiver.t()]
