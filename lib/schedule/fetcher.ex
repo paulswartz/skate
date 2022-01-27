@@ -133,7 +133,8 @@ defmodule Schedule.Fetcher do
   end
 
   defp fetch_gtfs(:remote, latest_gtfs_timestamp, latest_hastus_timestamp) do
-    if CacheFile.should_use_file?() do
+    # CacheFile end.should_use_file?() do
+    if false do
       Logger.info("#{__MODULE__}: Loading schedule data from cached file")
 
       with {:ok, data} <- CacheFile.load_gtfs() do
@@ -247,13 +248,14 @@ defmodule Schedule.Fetcher do
 
   @spec fetch_zip(String.t(), [String.t()], String.t() | nil) ::
           {:ok, Data.files() | nil, String.t() | nil} | {:error, any()}
-  def fetch_zip(url, file_names, latest_timestamp) do
-    request_headers =
-      if !is_nil(latest_timestamp) do
-        [{"if-modified-since", latest_timestamp}]
-      else
-        []
-      end
+  def fetch_zip(url, file_names, _latest_timestamp) do
+    request_headers = []
+
+    # if !is_nil(latest_timestamp) do
+    #   [{"if-modified-since", latest_timestamp}]
+    # else
+    #   []
+    # end
 
     case HTTPoison.get(
            url,

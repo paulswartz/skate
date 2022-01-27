@@ -195,7 +195,7 @@ defmodule Schedule do
   @spec call_with_data(persistent_term_key(), any(), atom(), any()) :: any()
   def call_with_data(persistent_term_key, args, function_name, default_result) do
     case :persistent_term.get(persistent_term_key, :not_loaded) do
-      {:loaded, data} ->
+      {{:loaded, data}, _} ->
         apply(Data, function_name, [data | args])
 
       :not_loaded ->
@@ -205,6 +205,7 @@ defmodule Schedule do
 
   @spec update_state(state(), term()) :: :ok
   def update_state(state, key \\ __MODULE__) do
+    state = {state, System.system_time()}
     {time, :ok} = :timer.tc(:persistent_term, :put, [key, state])
     %{count: count, memory: memory} = :persistent_term.info()
 
