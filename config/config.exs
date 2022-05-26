@@ -127,7 +127,30 @@ config :phoenix, :json_library, Jason
 # Fake Cognito authentication
 config :ueberauth, Ueberauth,
   providers: [
-    cognito: nil
+    cognito: nil,
+    oidc:
+      {Ueberauth.Strategy.OIDC,
+       [
+         default: [provider: :keycloak]
+       ]}
+  ]
+
+config :ueberauth, Ueberauth.Strategy.OIDC,
+  # one or more providers
+  keycloak: [
+    # true/false
+    fetch_userinfo: true,
+    # only include if getting the user_id from userinfo
+    userinfo_uid_field: "preferred_username",
+    # only include if getting the user_id from the claims
+    uid_field: "sub",
+    discovery_document_uri:
+      "https://login-dev.mbtace.com/auth/realms/LDAP-test/.well-known/openid-configuration",
+    client_id: "skate-dev",
+    client_secret: "<secret secret>",
+    redirect_uri: "http://localhost:4000/auth/oidc/callback",
+    response_type: "code",
+    scope: "openid profile"
   ]
 
 # Sentry for error tracking

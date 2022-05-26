@@ -37,7 +37,7 @@ config :ueberauth, Ueberauth,
     cognito: {Skate.Ueberauth.Strategy.Fake, [groups: ["skate-dispatcher"]]}
   ]
 
-config :logger, level: :notice
+config :logger, level: :info
 
 # ## SSL Support
 #

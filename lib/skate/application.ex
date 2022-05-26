@@ -26,7 +26,8 @@ defmodule Skate.Application do
           []
         end ++
         [
-          {Phoenix.PubSub, name: Skate.PubSub},
+{OpenIDConnect.Worker, Application.get_env(:ueberauth, Ueberauth.Strategy.OIDC)},
+{Phoenix.PubSub, name: Skate.PubSub},
           SkateWeb.Endpoint
         ]
 

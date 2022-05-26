@@ -5,7 +5,9 @@ defmodule SkateWeb.AuthController do
   alias SkateWeb.AuthManager
   alias SkateWeb.Router.Helpers
 
-  def callback(%{assigns: %{ueberauth_auth: auth}} = conn, _params) do
+  def callback(%{assigns: %{ueberauth_auth: auth}} = conn, params) do
+    IO.inspect(auth, label: "ueberauth auth")
+    IO.inspect(params, label: "auth params")
     username = auth.uid
     credentials = auth.credentials
     expiration = credentials.expires_at
@@ -16,14 +18,15 @@ defmodule SkateWeb.AuthController do
     |> Guardian.Plug.sign_in(
       AuthManager,
       username,
-      %{groups: credentials.other[:groups]},
+      %{groups: credentials.other.user_info["groups"]},
       ttl: {expiration - current_time, :seconds}
     )
     |> Plug.Conn.put_session(:username, username)
     |> redirect(to: Helpers.page_path(conn, :index))
   end
 
-  def callback(%{assigns: %{ueberauth_failure: _fails}} = conn, _params) do
+  def callback(%{assigns: %{ueberauth_failure: fails}} = conn, _params) do
+    IO.inspect(fails, label: "ueberauth fail")
     # Users are sometimes seeing unexpected Ueberauth failures of unknown provenance.
     # Instead of sending a 403 unauthenticated response, we are signing them out and
     # sending them to the home page to start the auth path over again.

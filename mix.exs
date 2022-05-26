@@ -58,6 +58,7 @@ defmodule Skate.MixProject do
       {:gen_stage, "~> 1.1.0"},
       {:ueberauth, "~> 0.9.0"},
       {:ueberauth_cognito, "~> 0.4.0"},
+      {:ueberauth_oidc, git: "https://github.com/DefactoSoftware/ueberauth_oidc.git"},
       {:guardian, "~> 2.0"},
       {:guardian_phoenix, "~> 2.0"},
       {:lcov_ex, "~> 0.2", only: [:dev, :test], runtime: false},

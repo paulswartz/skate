@@ -7,15 +7,18 @@ defmodule SkateWeb.AuthManager do
   @skate_dispatcher_group "skate-dispatcher"
   @skate_nav_beta_group "skate-nav-beta"
 
-  def subject_for_token(resource, _claims) do
-    {:ok, resource}
+  def subject_for_token(resource, claims) do
+    claims |> IO.inspect(label: "subject_for_token claims")
+    {:ok, resource |> IO.inspect(label: "subject_for_token resource")}
   end
 
-  def resource_from_claims(%{"sub" => username}) do
+  def resource_from_claims(x) do
+    IO.inspect(x, label: "resource_From_claioms")
+    %{"sub" => username} = x
     {:ok, username}
   end
 
-  def resource_from_claims(_), do: {:error, :invalid_claims}
+  # def resource_from_claims(_), do: {:error, :invalid_claims}
 
   def username_from_socket!(socket) do
     {:ok, username} =
