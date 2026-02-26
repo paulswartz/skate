@@ -12,17 +12,10 @@ config :skate, ecto_repos: [Skate.Repo]
 config :skate,
   # Default. Can be configured via environment variable, which is loaded in application.ex
   restrict_environment_access?: false,
-  google_tag_manager_id: {:system, "GOOGLE_TAG_MANAGER_ID"},
-  tileset_url: {:system, "TILESET_URL"},
-  gtfs_url: {:system, "GTFS_URL"},
-  hastus_url: {:system, "SKATE_HASTUS_URL"},
-  busloc_url: {:system, "BUSLOC_URL"},
-  trip_updates_url: {:system, "TRIP_UPDATES_URL"},
   bridge_requester: Bridge.Request,
   start_data_processes: true,
   record_appcues: false,
   record_fullstory: false,
-  fullstory_org: {:system, "FULLSTORY_ORG"},
   log_duration_timing: true,
   map_limits: %{
     north: 42.65,
@@ -94,7 +87,7 @@ config :skate, Schedule.CacheFile, cache_filename: nil
 # Configures the endpoint
 config :skate, SkateWeb.Endpoint,
   url: [host: "localhost"],
-  render_errors: [view: SkateWeb.ErrorHTML, accepts: ~w(html json)],
+  render_errors: [view: SkateWeb.ErrorView, accepts: ~w(html json)],
   pubsub_server: Skate.PubSub
 
 config :skate, SkateWeb.AuthManager,

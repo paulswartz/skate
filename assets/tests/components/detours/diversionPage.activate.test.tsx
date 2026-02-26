@@ -17,6 +17,7 @@ import {
   viewDraftDetourHeading,
 } from "../../testHelpers/selectors/components/detours/diversionPage"
 import {
+  activateDetour,
   fetchDetourDirections,
   fetchFinishedDetour,
   fetchNearestIntersection,
@@ -26,6 +27,7 @@ import {
 } from "../../../src/api"
 import { neverPromise } from "../../testHelpers/mockHelpers"
 import { byRole } from "testing-library-selector"
+import { Ok } from "../../../src/util/result"
 
 beforeEach(() => {
   jest.spyOn(global, "scrollTo").mockImplementationOnce(jest.fn())
@@ -49,7 +51,10 @@ beforeEach(() => {
   jest.mocked(fetchFinishedDetour).mockReturnValue(neverPromise())
   jest.mocked(fetchNearestIntersection).mockReturnValue(neverPromise())
   jest.mocked(fetchRoutePatterns).mockReturnValue(neverPromise())
-  jest.mocked(putDetourUpdate).mockReturnValue(neverPromise())
+  jest.mocked(putDetourUpdate).mockResolvedValue(Ok(42))
+  jest
+    .mocked(activateDetour)
+    .mockResolvedValue(Ok({ activated_at: new Date() }))
 
   jest
     .mocked(getTestGroups)
@@ -104,7 +109,7 @@ const diversionPageOnConfirmModalScreen = async (
   return { container }
 }
 
-const diversionPageOnActiveDetourScreen = async (
+const diversionPageOnActivateDetourScreen = async (
   props?: Partial<DiversionPageProps>
 ) => {
   const { container } = await diversionPageOnConfirmModalScreen(props)
@@ -359,11 +364,27 @@ describe("DiversionPage activate workflow", () => {
         screen.getByRole("heading", { name: "Active Detour" })
       ).toBeVisible()
     })
+
+    test("the 'Activate' button calls the activateDetour API with selected duration and reason", async () => {
+      jest.mocked(activateDetour).mockClear()
+
+      await diversionPageOnConfirmModalScreen()
+
+      await userEvent.click(activateButton.get())
+
+      await screen.findByRole("heading", { name: "Active Detour" })
+
+      expect(activateDetour).toHaveBeenCalledWith(
+        expect.any(Number),
+        "3 hours",
+        "Construction"
+      )
+    })
   })
 
   describe("from the 'Active Detour' screen", () => {
     test("'Active Detour' screen has a 'Return to regular route' button", async () => {
-      await diversionPageOnActiveDetourScreen()
+      await diversionPageOnActivateDetourScreen()
 
       expect(
         screen.getByRole("button", { name: "Return to regular route" })
@@ -371,7 +392,7 @@ describe("DiversionPage activate workflow", () => {
     })
 
     test("'Active Detour' screen has a 'Report an issue' button", async () => {
-      await diversionPageOnActiveDetourScreen()
+      await diversionPageOnActivateDetourScreen()
 
       expect(
         screen.getByRole("button", { name: "Report an issue" })
@@ -380,10 +401,28 @@ describe("DiversionPage activate workflow", () => {
 
     test("'Active Detour' screen does not have 'Report an issue' button for non-dispatchers", async () => {
       jest.mocked(getTestGroups).mockReturnValue([TestGroups.DetoursList])
-      await diversionPageOnActiveDetourScreen()
+      await diversionPageOnActivateDetourScreen()
 
       expect(
         screen.queryByRole("button", { name: "Report an issue" })
+      ).not.toBeInTheDocument()
+    })
+
+    test("'Active Detour' has 'Edit Route' button if in edit active detours test group", async () => {
+      jest
+        .mocked(getTestGroups)
+        .mockReturnValue([TestGroups.DetoursList, TestGroups.EditActiveDetours])
+      await diversionPageOnActivateDetourScreen()
+
+      expect(screen.queryByRole("button", { name: "Edit Route" })).toBeVisible()
+    })
+
+    test("'Active Detour' doesn't have 'Edit Route' button if not in test group", async () => {
+      jest.mocked(getTestGroups).mockReturnValue([TestGroups.DetoursList])
+      await diversionPageOnActivateDetourScreen()
+
+      expect(
+        screen.queryByRole("button", { name: "Edit Route" })
       ).not.toBeInTheDocument()
     })
   })
@@ -391,7 +430,7 @@ describe("DiversionPage activate workflow", () => {
 
 describe("DiversionPage Activate Screen", () => {
   test("has list of detour activation properties", async () => {
-    await diversionPageOnActiveDetourScreen()
+    await diversionPageOnActivateDetourScreen()
 
     expect(
       screen.getByRole("definition", { name: "Reason" })

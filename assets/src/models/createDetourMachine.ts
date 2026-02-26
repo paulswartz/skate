@@ -8,6 +8,7 @@ import {
   fetchFinishedDetour,
   fetchNearestIntersection,
   fetchRoutePatterns,
+  activateDetour,
 } from "../api"
 import { DetourShape, FinishedDetour } from "./detour"
 import { fullStoryEvent } from "../helpers/fullStory"
@@ -40,6 +41,7 @@ export const createDetourMachine = setup({
       activatedAt?: Date
 
       editedSelectedDuration?: string
+      editedRoute?: boolean
     },
 
     input: {} as
@@ -71,12 +73,20 @@ export const createDetourMachine = setup({
       | { type: "detour.edit.done" }
       | { type: "detour.edit.resume" }
       | { type: "detour.edit.clear-detour" }
+      | { type: "detour.edit.cancel" }
       | { type: "detour.edit.place-waypoint-on-route"; location: ShapePoint }
       | { type: "detour.edit.place-waypoint"; location: ShapePoint }
+      | { type: "detour.edit.delete-waypoint"; index: number }
+      | {
+          type: "detour.edit.move-waypoint"
+          index: number
+          position: ShapePoint
+        }
       | { type: "detour.edit.undo" }
       | { type: "detour.share.edit-directions"; detourText: string }
       | { type: "detour.share.copy-detour"; detourText: string }
       | { type: "detour.share.open-activate-modal" }
+      | { type: "detour.share.activate" }
       | {
           type: "detour.share.activate-modal.select-duration"
           duration: string
@@ -88,6 +98,7 @@ export const createDetourMachine = setup({
       | { type: "detour.share.activate-modal.next" }
       | { type: "detour.share.activate-modal.cancel" }
       | { type: "detour.share.activate-modal.back" }
+      | { type: "detour.share.activate-modal.update" }
       | { type: "detour.share.activate-modal.activate" }
       | { type: "detour.active.open-change-duration-modal" }
       | {
@@ -99,6 +110,9 @@ export const createDetourMachine = setup({
       | { type: "detour.active.open-deactivate-modal" }
       | { type: "detour.active.deactivate-modal.deactivate" }
       | { type: "detour.active.deactivate-modal.cancel" }
+      | { type: "detour.active.edit.resume" }
+      | { type: "detour.active.edit.done" }
+      | { type: "detour.active.edit.cancel" }
       | { type: "detour.save.begin-save" }
       | { type: "detour.save.set-uuid"; uuid: number }
       | { type: "detour.delete.open-delete-modal" }
@@ -111,9 +125,10 @@ export const createDetourMachine = setup({
     // -- when the route id / route pattern is getting selected
     // -- right after the route pattern is finalized, before any waypoints are added
     // That leads to the following interface: if the user begins drafting a detour, adds waypoints, and then changes the route,
-    // the database will reflect the old route and old waypoints up until the point where a new waypoint is added.
+    // the database will reflect the old route and old waypoints up until the point where a new waypoint is added,
+    // unless they are editing an already activated detour, when it will only be saved upon re-activation
     // If that UX assumption isn't the right one, we can iterate in the future!
-    tags: "no-save",
+    tags: {} as "no-save" | "save-activated",
   },
   actors: {
     "fetch-route-patterns": fromPromise<
@@ -188,6 +203,31 @@ export const createDetourMachine = setup({
         )
       }
     ),
+
+    "activate-detour": fromPromise<
+      { activated_at: Date },
+      {
+        uuid?: number
+        selectedDuration?: string
+        selectedReason?: string
+      }
+    >(async ({ input: { uuid, selectedDuration, selectedReason } }) => {
+      if (!uuid || !selectedDuration || !selectedReason) {
+        throw "Missing activation inputs"
+      }
+
+      const result = await activateDetour(
+        uuid,
+        selectedDuration,
+        selectedReason
+      )
+
+      if (isOk(result)) {
+        return result.ok
+      } else {
+        throw "Failed to activate detour"
+      }
+    }),
   },
   actions: {
     "set.route-pattern": assign({
@@ -220,6 +260,10 @@ export const createDetourMachine = setup({
       endPoint: undefined,
       finishedDetour: undefined,
     }),
+    "detour.delete-waypoint": assign({
+      waypoints: ({ context }, params: { index: number }) =>
+        context.waypoints.filter((_, i) => i != params.index),
+    }),
     "detour.clear": assign({
       startPoint: undefined,
       waypoints: [],
@@ -242,6 +286,7 @@ export const createDetourMachine = setup({
     nearestIntersection: null,
     finishedDetour: undefined,
     detourShape: undefined,
+    editedRoute: false,
   }),
   type: "parallel",
   initial: "Detour Drawing",
@@ -374,6 +419,9 @@ export const createDetourMachine = setup({
               target: ".Pick Start Point",
               actions: "detour.clear",
             },
+            "detour.edit.cancel": {
+              target: "Active",
+            },
           },
           states: {
             "Pick Start Point": {
@@ -410,6 +458,7 @@ export const createDetourMachine = setup({
                   onDone: {
                     actions: assign({
                       nearestIntersection: ({ event }) => event.output,
+                      editedRoute: true,
                     }),
                   },
 
@@ -463,6 +512,29 @@ export const createDetourMachine = setup({
                     () => {
                       fullStoryEvent("Placed Detour End Point", {})
                     },
+                  ],
+                },
+                "detour.edit.delete-waypoint": {
+                  target: "Place Waypoint",
+                  reenter: true,
+                  actions: [
+                    {
+                      type: "detour.delete-waypoint",
+                      params: ({ event }) => event,
+                    },
+                  ],
+                },
+                "detour.edit.move-waypoint": {
+                  target: "Place Waypoint",
+                  reenter: true,
+                  actions: [
+                    assign({
+                      waypoints: ({ context, event }) => {
+                        const waypoints = context.waypoints
+                        waypoints[event.index] = event.position
+                        return waypoints
+                      },
+                    }),
                   ],
                 },
                 "detour.edit.undo": [
@@ -520,9 +592,34 @@ export const createDetourMachine = setup({
                 },
                 "detour.edit.done": {
                   target: "Done",
+                  guard: ({ context }) =>
+                    !context.activatedAt || context.editedRoute === true,
                 },
                 "detour.delete.open-delete-modal": {
                   target: "Deleting",
+                },
+                "detour.edit.delete-waypoint": {
+                  target: "Finished Drawing",
+                  reenter: true,
+                  actions: [
+                    {
+                      type: "detour.delete-waypoint",
+                      params: ({ event }) => event,
+                    },
+                  ],
+                },
+                "detour.edit.move-waypoint": {
+                  target: "Finished Drawing",
+                  reenter: true,
+                  actions: [
+                    assign({
+                      waypoints: ({ context, event }) => {
+                        const waypoints = context.waypoints
+                        waypoints[event.index] = event.position
+                        return waypoints
+                      },
+                    }),
+                  ],
                 },
               },
             },
@@ -679,16 +776,44 @@ export const createDetourMachine = setup({
                       target: "Selecting Reason",
                     },
                     "detour.share.activate-modal.activate": {
+                      target: "Activating Server",
+                    },
+                    "detour.share.activate-modal.update": {
                       target: "Done",
-                      actions: assign({
-                        // Record current time, should be done on the backend,
-                        // but that requires a larger refactor of the state machine
-                        activatedAt: () => new Date(),
-                      }),
                     },
                   },
                 },
-                Done: { type: "final" },
+                "Activating Server": {
+                  tags: "no-save",
+                  invoke: {
+                    id: "activate-detour",
+                    src: "activate-detour",
+                    input: ({
+                      context: { uuid, selectedDuration, selectedReason },
+                    }) => ({
+                      uuid,
+                      selectedDuration,
+                      selectedReason,
+                    }),
+                    onDone: {
+                      target: "Done",
+                      actions: assign({
+                        activatedAt: ({ event }) => event.output.activated_at,
+                      }),
+                    },
+                    onError: {
+                      // Still transition to Done even on error to allow the snapshot to save
+                      target: "Done",
+                      actions: ({ event }) => {
+                        // Log error to Sentry
+                        throw new Error(
+                          `Failed to activate detour on server: ${event.error}`
+                        )
+                      },
+                    },
+                  },
+                },
+                Done: { type: "final", tags: "no-save" },
               },
               onDone: {
                 target: "Done",
@@ -763,12 +888,20 @@ export const createDetourMachine = setup({
             },
             Done: { type: "final" },
           },
+          on: {
+            "detour.edit.resume": {
+              target: "Editing.Finished Drawing",
+            },
+          },
           onDone: {
             target: "Past",
           },
+          tags: "save-activated",
         },
 
-        Past: {},
+        Past: {
+          tags: "save-activated",
+        },
 
         Deleted: {
           id: "Deleted",

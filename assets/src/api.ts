@@ -28,13 +28,16 @@ import {
   array,
   assert,
   boolean,
+  coerce,
   create,
+  date,
   enums,
   Infer,
   is,
   never,
   number,
   object,
+  string,
   Struct,
   StructError,
 } from "superstruct"
@@ -252,13 +255,13 @@ export const apiCallResult = async <T, E>({
 
       // Then check if the response is `ok` and try to return `Ok(OkStruct)`
       // Otherwise, return `Err(ErrStruct)` and attempt to return the data
-      // according to JSONAPI specifications
+      // according to [JSONAPI specifications](https://jsonapi.org/format/#error-objects)
       if (response.ok && is(json, object({ data: any() }))) {
         const parsed = parser ? parser(json.data) : json.data
         return Ok(create(parsed, OkStruct))
       } else {
-        assert(json, object({ error: any() }))
-        return Err(create(json.error, ErrStruct))
+        assert(json, object({ errors: any() }))
+        return Err(create(json, ErrStruct))
       }
     })
     .catch((error) => {
@@ -553,13 +556,23 @@ export const fetchDetours = (): Promise<Result<GroupedSimpleDetours, never>> =>
     ErrStruct: never(),
   }).then((v) => map(v, groupedDetoursFromData))
 
+const FetchDetourError = object({
+  errors: array(
+    object({
+      detail: string(),
+    })
+  ),
+})
+
+export type FetchDetourError = Infer<typeof FetchDetourError>
+
 export const fetchDetour = (
   id: number
-): Promise<Result<DetourWithState, never>> =>
+): Promise<Result<DetourWithState, FetchDetourError>> =>
   apiCallResult({
     url: `/api/detours/${id}`,
     OkStruct: DetourWithStateData,
-    ErrStruct: never(),
+    ErrStruct: FetchDetourError,
   }).then((v) => map(v, detourStateFromData))
 
 export const deleteDetour = (id: number): Promise<Result<boolean, never>> => {
@@ -573,6 +586,31 @@ export const deleteDetour = (id: number): Promise<Result<boolean, never>> => {
         "Content-Type": "application/json",
         "x-csrf-token": getCsrfToken(),
       },
+    },
+  })
+}
+
+export const activateDetour = (
+  id: number,
+  selectedDuration: string,
+  selectedReason: string
+): Promise<Result<{ activated_at: Date }, never>> => {
+  return apiCallResult({
+    url: `/api/detours/${id}/activate`,
+    OkStruct: object({
+      activated_at: coerce(date(), string(), (dateStr) => new Date(dateStr)),
+    }),
+    ErrStruct: never(),
+    requestInit: {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": getCsrfToken(),
+      },
+      body: JSON.stringify({
+        selected_duration: selectedDuration,
+        selected_reason: selectedReason,
+      }),
     },
   })
 }

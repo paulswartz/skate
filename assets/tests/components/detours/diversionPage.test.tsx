@@ -9,6 +9,7 @@ import {
 import React, { act } from "react"
 import "@testing-library/jest-dom/jest-globals"
 import {
+  activateDetour,
   FetchDetourDirectionsError,
   fetchDetourDirections,
   fetchFinishedDetour,
@@ -82,6 +83,9 @@ beforeEach(() => {
   jest.mocked(fetchNearestIntersection).mockReturnValue(neverPromise())
   jest.mocked(fetchRoutePatterns).mockReturnValue(neverPromise())
   jest.mocked(putDetourUpdate).mockReturnValue(neverPromise())
+  jest
+    .mocked(activateDetour)
+    .mockResolvedValue(Ok({ activated_at: new Date() }))
 })
 
 describe("DiversionPage", () => {
@@ -156,6 +160,57 @@ describe("DiversionPage", () => {
     })
     act(() => {
       fireEvent.click(container.querySelector(".c-vehicle-map")!)
+    })
+
+    await waitFor(() => {
+      expect(
+        container.querySelectorAll(".c-detour_map-circle-marker--detour-point")
+      ).toHaveLength(1)
+    })
+  })
+
+  test("hovering waypoint shows waypoint tooltip", async () => {
+    const { container } = render(<DiversionPage />)
+
+    act(() => {
+      fireEvent.click(originalRouteShape.get(container))
+    })
+
+    act(() => {
+      fireEvent.click(container.querySelector(".c-vehicle-map")!)
+    })
+
+    act(() => {
+      fireEvent.mouseOver(
+        container.querySelector(".c-detour_map-circle-marker--detour-point")!
+      )
+    })
+
+    expect(
+      await screen.findByRole("tooltip", {
+        name: "Drag to change route, click to remove",
+      })
+    ).toBeVisible()
+  })
+
+  test("clicking a waypoint deletes the waypoint", async () => {
+    const { container } = render(<DiversionPage />)
+
+    act(() => {
+      fireEvent.click(originalRouteShape.get(container))
+    })
+
+    act(() => {
+      fireEvent.click(container.querySelector(".c-vehicle-map")!)
+    })
+
+    act(() => {
+      fireEvent.click(container.querySelector(".c-vehicle-map")!)
+    })
+    act(() => {
+      fireEvent.click(
+        container.querySelector(".c-detour_map-circle-marker--detour-point")!
+      )
     })
 
     await waitFor(() => {
@@ -415,6 +470,42 @@ describe("DiversionPage", () => {
       expect(
         container.querySelectorAll(".c-detour_map-circle-marker--detour-point")
       ).toHaveLength(1)
+
+      expect(screen.getAllByTitle("Detour End")).toHaveLength(1)
+    })
+  })
+
+  test("clicking a waypoint after the detour is ended deletes the waypoint", async () => {
+    const { container } = render(<DiversionPage />)
+
+    act(() => {
+      fireEvent.click(originalRouteShape.get(container))
+    })
+
+    act(() => {
+      fireEvent.click(container.querySelector(".c-vehicle-map")!)
+    })
+
+    act(() => {
+      fireEvent.click(originalRouteShape.get(container))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTitle("Detour End")).toBeVisible()
+    })
+
+    act(() => {
+      fireEvent.click(
+        container.querySelector(".c-detour_map-circle-marker--detour-point")!
+      )
+    })
+
+    await waitFor(() => {
+      expect(screen.getAllByTitle("Detour Start")).toHaveLength(1)
+
+      expect(
+        container.querySelectorAll(".c-detour_map-circle-marker--detour-point")
+      ).toHaveLength(0)
 
       expect(screen.getAllByTitle("Detour End")).toHaveLength(1)
     })
@@ -1261,7 +1352,7 @@ describe("DiversionPage", () => {
 
     await userEvent.click(reviewDetourButton.get())
 
-    expect(screen.getByRole("button", { name: "Copy details" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "Copy" })).toBeVisible()
   })
 
   test("'View Draft Detour' screen copies text content to clipboard when clicked copy details button", async () => {
@@ -1327,7 +1418,7 @@ describe("DiversionPage", () => {
 
     await userEvent.click(reviewDetourButton.get())
 
-    await userEvent.click(screen.getByRole("button", { name: "Copy details" }))
+    await userEvent.click(screen.getByRole("button", { name: "Copy" }))
 
     await waitFor(() =>
       expect(window.navigator.clipboard.readText()).resolves.toBe(
@@ -1398,7 +1489,7 @@ describe("DiversionPage", () => {
 
     await userEvent.type(input, "\nHello World!")
 
-    await userEvent.click(screen.getByRole("button", { name: "Copy details" }))
+    await userEvent.click(screen.getByRole("button", { name: "Copy" }))
 
     await waitFor(() =>
       expect(window.navigator.clipboard.readText()).resolves.toMatch(

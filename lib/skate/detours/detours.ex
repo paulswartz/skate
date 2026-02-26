@@ -189,7 +189,8 @@ defmodule Skate.Detours.Detours do
   Update or insert a detour given a user id and a XState Snapshot.
   """
   def upsert_from_snapshot(author_id, %{} = snapshot) do
-    detour_changeset = Skate.Detours.SnapshotSerde.deserialize(author_id, snapshot)
+    detour_changeset =
+      Skate.Detours.SnapshotSerde.deserialize(author_id, snapshot)
 
     detour_db_result =
       Skate.Repo.insert(
@@ -230,6 +231,49 @@ defmodule Skate.Detours.Detours do
       "detours:draft:" <> author_uuid,
       {:draft_detour_deleted, detour.id}
     )
+  end
+
+  @spec activate_detour(String.t(), DbUser.id(), String.t(), String.t()) ::
+          {:ok, Detour.t()} | {:error, :not_found | :unauthorized | :invalid_status}
+  def activate_detour(detour_id, user_id, selected_duration, selected_reason) do
+    with {:ok, detour} <- fetch_detour_for_activation(detour_id, user_id),
+         :ok <- validate_detour_status(detour),
+         changeset <- build_activation_changeset(detour, selected_duration, selected_reason),
+         {:ok, updated_detour} <- Repo.update(changeset) do
+      handle_detour_updated(changeset, updated_detour, user_id)
+
+      {:ok, updated_detour}
+    end
+  end
+
+  defp fetch_detour_for_activation(detour_id, user_id) do
+    case Repo.get(Detour, detour_id) do
+      nil ->
+        {:error, :not_found}
+
+      detour ->
+        if detour.author_id == user_id do
+          {:ok, detour}
+        else
+          {:error, :unauthorized}
+        end
+    end
+  end
+
+  defp validate_detour_status(%Detour{status: :draft}), do: :ok
+  defp validate_detour_status(_), do: {:error, :invalid_status}
+
+  defp build_activation_changeset(detour, selected_duration, selected_reason) do
+    new_state =
+      detour.state
+      |> put_in(["context", "selectedDuration"], selected_duration)
+      |> put_in(["context", "selectedReason"], selected_reason)
+      |> put_in(["value", "Detour Drawing"], %{"Active" => "Reviewing"})
+
+    Detour.changeset(detour, %{
+      state: new_state,
+      activated_at: DateTime.utc_now()
+    })
   end
 
   def copy_to_draft_detour(detour, author_id) do
@@ -348,19 +392,30 @@ defmodule Skate.Detours.Detours do
 
   defp process_notifications(
          %Ecto.Changeset{
+           changes:
+             %{
+               updated_at: _,
+               state: %{"context" => %{"selectedDuration" => selected_duration}}
+             } = changes,
            data: %Detour{
              status: :active,
              state: %{"context" => %{"selectedDuration" => previous_duration}}
-           },
-           changes: %{state: %{"context" => %{"selectedDuration" => selected_duration}}}
+           }
          },
          %Detour{} = detour
-       )
-       when previous_duration != selected_duration do
-    %SimpleDetour{estimated_duration: estimated_duration} = db_detour_to_detour(detour)
-    expires_at = calculate_expiration_timestamp(detour, estimated_duration)
+       ) do
+    if is_map_key(changes, :end_point) or
+         is_map_key(changes, :start_point) or
+         is_map_key(changes, :waypoints) do
+      Notifications.Notification.create_updated_detour_notification_from_detour(detour)
+    end
 
-    Skate.Detours.NotificationScheduler.detour_duration_changed(detour, expires_at)
+    if previous_duration != selected_duration do
+      %SimpleDetour{estimated_duration: estimated_duration} = db_detour_to_detour(detour)
+      expires_at = calculate_expiration_timestamp(detour, estimated_duration)
+
+      Skate.Detours.NotificationScheduler.detour_duration_changed(detour, expires_at)
+    end
   end
 
   defp process_notifications(_, _), do: nil
@@ -370,6 +425,17 @@ defmodule Skate.Detours.Detours do
       %TestGroup{override: :enabled} -> true
       _ -> false
     end
+  end
+
+  defp get_adjustment_id(detour, adjustments_response) do
+    adjustments_response
+    |> Map.get(:adjustments, [])
+    |> Enum.filter(fn adjustment ->
+      Map.get(adjustment, :notes) == Integer.to_string(detour.id) and
+        Map.get(adjustment, :feedId) =~ System.get_env("ENVIRONMENT_NAME", "missing-env")
+    end)
+    |> Enum.map(fn adjustment -> Map.get(adjustment, :id) end)
+    |> Enum.at(0)
   end
 
   defp update_swiftly(changeset, detour) do
@@ -401,6 +467,39 @@ defmodule Skate.Detours.Detours do
   defp update_swiftly(
          %Ecto.Changeset{
            data: %Detour{status: :active},
+           changes: %{updated_at: _} = changes
+         },
+         %Detour{} = detour,
+         true
+       )
+       when is_map_key(changes, :end_point) or
+              is_map_key(changes, :start_point) or
+              is_map_key(changes, :waypoints) do
+    service_adjustments_module = service_adjustments_module()
+
+    case service_adjustments_module.get_adjustments_v1(build_swiftly_opts()) do
+      {:ok, adjustments_response} ->
+        adjustment_id = get_adjustment_id(detour, adjustments_response)
+
+        if adjustment_id do
+          {:ok, adjustment_request} = Swiftly.API.Requests.to_swiftly(detour)
+
+          service_adjustments_module.create_adjustment_v1(
+            adjustment_request,
+            Keyword.put(build_swiftly_opts(), :adjustment_id, adjustment_id)
+          )
+        else
+          {:error, :not_found}
+        end
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp update_swiftly(
+         %Ecto.Changeset{
+           data: %Detour{status: :active},
            changes: %{status: :past}
          },
          %Detour{} = detour,
@@ -410,14 +509,7 @@ defmodule Skate.Detours.Detours do
 
     case service_adjustments_module.get_adjustments_v1(build_swiftly_opts()) do
       {:ok, adjustments_response} ->
-        adjustment_id =
-          adjustments_response
-          |> Map.get(:adjustments, [])
-          |> Enum.filter(fn adjustment ->
-            Map.get(adjustment, :notes) == Integer.to_string(detour.id)
-          end)
-          |> Enum.map(fn adjustment -> Map.get(adjustment, :id) end)
-          |> Enum.at(0)
+        adjustment_id = get_adjustment_id(detour, adjustments_response)
 
         if adjustment_id do
           service_adjustments_module.delete_adjustment_v1(adjustment_id, build_swiftly_opts())

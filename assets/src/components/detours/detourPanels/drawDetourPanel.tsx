@@ -23,7 +23,9 @@ export interface DrawDetourPanelProps extends PropsWithChildren {
   detourFinished?: boolean
   onReviewDetour?: () => void
   onDeleteDetour?: () => void
-  onChangeRoute: () => void
+  onChangeRoute?: () => void
+  onCancelEdit?: () => void
+  isActiveDetour: boolean
 }
 
 export const DrawDetourPanel = ({
@@ -38,13 +40,16 @@ export const DrawDetourPanel = ({
   onReviewDetour,
   onDeleteDetour,
   onChangeRoute,
+  onCancelEdit,
+  isActiveDetour,
   children,
 }: DrawDetourPanelProps) => (
   <Panel as="article" className="c-diversion-panel">
-    <Panel.Header>
-      <h1 className="c-diversion-panel__h1 my-3">Draw Detour</h1>
+    <Panel.Header className={isActiveDetour ? "active-detour" : ""}>
+      <h1 className="c-diversion-panel__h1 my-3">
+        {isActiveDetour ? "Edit Active Detour" : "Edit Detour"}
+      </h1>
     </Panel.Header>
-
     <Panel.Body className="d-flex flex-column">
       <Panel.Body.ScrollArea>
         {onChangeRoute && (
@@ -55,6 +60,17 @@ export const DrawDetourPanel = ({
           >
             <ArrowLeft />
             Change route or direction
+          </Button>
+        )}
+        {isActiveDetour && (
+          <Button
+            variant="outline-primary"
+            className="align-self-start icon-link my-3"
+            onClick={onCancelEdit}
+            size="sm"
+          >
+            <ArrowLeft />
+            Cancel
           </Button>
         )}
 
@@ -114,7 +130,7 @@ export const DrawDetourPanel = ({
           disabled={!detourFinished}
         >
           <CardChecklist />
-          Review
+          Review {isActiveDetour && " Changes"}
         </Button>
       </Panel.Body.Footer>
     </Panel.Body>

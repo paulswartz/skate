@@ -7,21 +7,43 @@ defmodule Concentrate.Parser.GTFSRealtimeEnhanced do
   alias Concentrate.{StopTimeUpdate, TripUpdate, VehiclePosition}
   alias Realtime.Crowding
 
-  @soc_vehicle_allow_list [
-    "4200",
-    "4201",
-    "4202",
-    "4203",
-    "4204",
-    "4300",
-    "4301",
-    "4302",
-    "4303",
-    "4304"
-  ]
+  @soc_vehicle_allow_list Enum.map(4200..4399, &Integer.to_string/1)
 
   @impl Concentrate.Parser
-  def parse(json), do: decode_entities(json)
+  def parse(data)
+
+  def parse(binary) when is_binary(binary) do
+    json = Jason.decode!(binary)
+    parse_json(json)
+  end
+
+  def parse(json) when is_map(json) do
+    parse_json(json)
+  end
+
+  defp parse_json(json) do
+    partial? =
+      case json do
+        %{
+          "header" => %{
+            "incrementality" => incrementality
+          }
+        }
+        when incrementality in [1, "DIFFERENTIAL"] ->
+          true
+
+        _ ->
+          false
+      end
+
+    entities = decode_entities(json)
+
+    if partial? do
+      {:partial, entities}
+    else
+      entities
+    end
+  end
 
   @spec decode_entities(map()) :: [TripUpdate.t() | StopTimeUpdate.t() | VehiclePosition.t()]
   defp decode_entities(%{"entity" => entities}),

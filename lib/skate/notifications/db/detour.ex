@@ -22,7 +22,7 @@ defmodule Skate.Notifications.Db.Detour do
     belongs_to :detour, Skate.Detours.Db.Detour
     has_one :notification, Notifications.Db.Notification
 
-    field :status, Ecto.Enum, values: [:activated, :deactivated]
+    field :status, Ecto.Enum, values: [:activated, :deactivated, :updated]
 
     # Derived from the associated detour
     field :headsign, :any, virtual: true
@@ -32,11 +32,23 @@ defmodule Skate.Notifications.Db.Detour do
   end
 
   def changeset(detour_notification, params) do
+    params = add_notification_params(params)
+
     detour_notification
     |> cast(params, [:status])
     |> cast_assoc(:notification)
     |> validate_required([:status])
     |> assoc_constraint(:detour)
+  end
+
+  defp add_notification_params(params) do
+    params
+    |> Map.put_new(:notification, %{})
+    |> Map.update!(:notification, fn notification ->
+      Map.put_new_lazy(notification, :users, fn ->
+        Skate.Settings.User.list_users_with_route_ids([params.route_id])
+      end)
+    end)
   end
 
   # Notifications are not created from external input, so there is no changeset function

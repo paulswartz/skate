@@ -99,6 +99,8 @@ export const DiversionPage = ({
 
     addConnectionPoint,
     addWaypoint,
+    moveWaypoint,
+    deleteWaypoint,
 
     startPoint,
     endPoint,
@@ -193,10 +195,10 @@ export const DiversionPage = ({
   const epochNowInSeconds = useCurrentTimeSeconds()
 
   const detourStatus = (() => {
-    if (snapshot.matches({ "Detour Drawing": "Active" })) {
-      return DetourStatus.Active
-    } else if (snapshot.matches({ "Detour Drawing": "Past" })) {
+    if (snapshot.matches({ "Detour Drawing": "Past" })) {
       return DetourStatus.Closed
+    } else if (snapshot.context.activatedAt) {
+      return DetourStatus.Active
     } else {
       return DetourStatus.Draft
     }
@@ -216,10 +218,28 @@ export const DiversionPage = ({
     deleteDetourCallback: () => void
     copyToDraftDetourCallback: () => void
   }) => React.JSX.Element = () => {
+    const isActiveDetour = detourStatus === DetourStatus.Active
+    const isDraftDetour = detourStatus === DetourStatus.Draft
     const onDeleteDetour =
-      inTestGroup(TestGroups.DeleteDraftDetours) && snapshot.context.uuid
+      inTestGroup(TestGroups.DeleteDraftDetours) &&
+      snapshot.context.uuid &&
+      isDraftDetour
         ? () => send({ type: "detour.delete.open-delete-modal" })
         : undefined
+    const onChangeRoute = isDraftDetour
+      ? () => send({ type: "detour.route-pattern.open" })
+      : undefined
+    const onCancelEdit = isActiveDetour
+      ? () => send({ type: "detour.edit.cancel" })
+      : undefined
+
+    const onActivate = isActiveDetour
+      ? snapshot.can({ type: "detour.share.activate-modal.update" })
+        ? () => send({ type: "detour.share.activate-modal.update" })
+        : undefined
+      : snapshot.can({ type: "detour.share.activate-modal.activate" })
+      ? () => send({ type: "detour.share.activate-modal.activate" })
+      : undefined
 
     if (snapshot.matches({ "Detour Drawing": "Pick Route Pattern" })) {
       return (
@@ -290,8 +310,10 @@ export const DiversionPage = ({
           routeDirection={routeDirection ?? "??"}
           detourFinished={reviewDetour !== undefined}
           onReviewDetour={reviewDetour}
-          onChangeRoute={() => send({ type: "detour.route-pattern.open" })}
+          onChangeRoute={onChangeRoute}
           onDeleteDetour={onDeleteDetour}
+          onCancelEdit={onCancelEdit}
+          isActiveDetour={detourStatus === DetourStatus.Active}
         >
           {snapshot.matches({
             "Detour Drawing": {
@@ -352,6 +374,7 @@ export const DiversionPage = ({
               routeDirection={routeDirection ?? "??"}
             />
           }
+          isActiveDetour={detourStatus === DetourStatus.Active}
         >
           {snapshot.matches({
             "Detour Drawing": {
@@ -391,15 +414,8 @@ export const DiversionPage = ({
                     }
                   : undefined
               }
-              onActivate={
-                snapshot.can({
-                  type: "detour.share.activate-modal.activate",
-                })
-                  ? () => {
-                      send({ type: "detour.share.activate-modal.activate" })
-                    }
-                  : undefined
-              }
+              onActivate={onActivate}
+              isActiveDetour={isActiveDetour}
             >
               {snapshot.matches({
                 "Detour Drawing": {
@@ -434,7 +450,7 @@ export const DiversionPage = ({
                     "Share Detour": { Activating: "Confirming" },
                   },
                 }) ? (
-                <ActivateDetour.Confirming />
+                <ActivateDetour.Confirming isActiveDetour={isActiveDetour} />
               ) : null}
             </ActivateDetour.Modal>
           ) : null}
@@ -487,6 +503,11 @@ export const DiversionPage = ({
           routeDirection={routeDirection ?? "??"}
           onNavigateBack={onClose}
           showIssueButton={userInTestGroup(TestGroups.DetoursPilot)}
+          onEditActiveDetour={
+            userInTestGroup(TestGroups.EditActiveDetours)
+              ? editDetour
+              : undefined
+          }
           onOpenDeactivateModal={
             userInTestGroup(TestGroups.DetoursPilot)
               ? () => {
@@ -589,7 +610,7 @@ export const DiversionPage = ({
           className={joinClasses([
             "l-diversion-page__header",
             "border-bottom",
-            snapshot.matches({ "Detour Drawing": "Active" }) &&
+            detourStatus === DetourStatus.Active &&
             userInTestGroup(TestGroups.DetoursPilot)
               ? "active-detour"
               : "text-bg-light",
@@ -660,6 +681,8 @@ export const DiversionPage = ({
             unfinishedRouteSegments={unfinishedRouteSegments}
             routeSegments={routeSegments}
             onAddWaypoint={addWaypoint}
+            onDeleteWaypoint={deleteWaypoint}
+            onMoveWaypoint={moveWaypoint}
             onClickOriginalShape={addConnectionPoint ?? (() => {})}
             undoDisabled={canUndo === false}
             onUndo={undo ?? (() => {})}

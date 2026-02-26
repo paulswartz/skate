@@ -43,6 +43,11 @@ export const useDetour = (useDetourProps: UseDetourInput) => {
         return
       }
 
+      // if detour already activated, do not save, unless overridden
+      if (snap.context.activatedAt && !snap.hasTag("save-activated")) {
+        return
+      }
+
       actorRef.getSnapshot().can({ type: "detour.save.begin-save" }) &&
         actorRef.send({ type: "detour.save.begin-save" })
 
@@ -104,6 +109,30 @@ export const useDetour = (useDetourProps: UseDetourInput) => {
       }
     : undefined
 
+  const deleteWaypointMemo = useCallback(
+    (index: number) => send({ type: "detour.edit.delete-waypoint", index }),
+    [send]
+  )
+  const deleteWaypoint = snapshot.can({
+    type: "detour.edit.delete-waypoint",
+    index: -1,
+  })
+    ? deleteWaypointMemo
+    : undefined
+
+  const moveWaypointMemo = useCallback(
+    (index: number, position: ShapePoint) =>
+      send({ type: "detour.edit.move-waypoint", index, position }),
+    [send]
+  )
+  const moveWaypoint = snapshot.can({
+    type: "detour.edit.move-waypoint",
+    index: -1,
+    position: { lat: -1, lon: -1 },
+  })
+    ? moveWaypointMemo
+    : undefined
+
   const addConnectionPoint = (point: ShapePoint) =>
     send({
       type: "detour.edit.place-waypoint-on-route",
@@ -148,6 +177,8 @@ export const useDetour = (useDetourProps: UseDetourInput) => {
      * - {@link endPoint} is not set.
      */
     addWaypoint,
+    moveWaypoint,
+    deleteWaypoint,
     /**
      * Sets {@link startPoint} if unset.
      * Otherwise sets {@link endPoint} if unset.
@@ -216,6 +247,8 @@ export const useDetour = (useDetourProps: UseDetourInput) => {
      * Clears the entire detour
      */
     clear,
+
+    finishedDetour,
 
     /** When present, puts this detour in "finished mode" */
     reviewDetour: snapshot.can({ type: "detour.edit.done" })
